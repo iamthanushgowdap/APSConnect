@@ -14,27 +14,51 @@ export default function StudentDashboard() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
+  // ✅ Approval workflow
+  const [status, setStatus] = useState<string | null>(null);
+  const [facultyRemark, setFacultyRemark] = useState<string | null>(null);
+  const [adminRemark, setAdminRemark] = useState<string | null>(null);
+
   useEffect(() => {
     async function load() {
       try {
         setLoading(true);
 
-        const { data: auth } = await supabase.auth.getUser();
-        if (!auth?.user) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) {
           setMessage("Login required.");
           return;
         }
 
         const { data: studentData } = await supabase
           .from("users")
-          .select("*")
-          .eq("auth_id", auth.user.id)
+          .select("*, status, faculty_remark, admin_remark")
+          .eq("auth_id", user.id)
           .single();
         if (!studentData) {
           setMessage("Student not found.");
           return;
         }
         setStudent(studentData);
+        setStatus(studentData.status);
+        setFacultyRemark(studentData.faculty_remark);
+        setAdminRemark(studentData.admin_remark);
+
+        // Approval workflow checks
+        if (studentData.status === "pending") {
+          setMessage("Your account is pending faculty/admin approval.");
+          return;
+        }
+        if (studentData.status === "rejected") {
+          setMessage(
+            `Rejected ❌ — Faculty: ${
+              studentData.faculty_remark || "No remark"
+            } | Admin: ${studentData.admin_remark || "No remark"}`
+          );
+          return;
+        }
 
         // Assignments
         const { data: ass } = await supabase
@@ -53,7 +77,7 @@ export default function StudentDashboard() {
           .eq("student_id", studentData.id);
         setAttendance(att ?? []);
 
-        // Timetable → filter today
+        // Timetable → today
         const today = new Date().toLocaleDateString("en-US", {
           weekday: "long",
         });
@@ -93,7 +117,6 @@ export default function StudentDashboard() {
   }, []);
 
   const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042"];
-
   const attendanceChartData = (() => {
     const grouped: Record<string, number> = {};
     attendance.forEach((a) => {
@@ -108,11 +131,39 @@ export default function StudentDashboard() {
   })();
 
   if (loading) return <p>Loading...</p>;
-  if (message) return <p>{message}</p>;
 
   return (
     <main className="p-6 bg-gray-100 min-h-screen space-y-6">
       <h1 className="text-2xl font-bold">Welcome, {student?.name}</h1>
+
+      {/* Approval Status */}
+      <section className="bg-white shadow p-4 rounded">
+        <h2 className="text-xl font-semibold mb-2">Account Status</h2>
+        <p>
+          <strong>Status:</strong>{" "}
+          <span
+            className={`px-2 py-1 rounded ${
+              status === "approved"
+                ? "bg-green-100 text-green-800"
+                : status === "pending"
+                ? "bg-yellow-100 text-yellow-800"
+                : "bg-red-100 text-red-800"
+            }`}
+          >
+            {status}
+          </span>
+        </p>
+        {facultyRemark && (
+          <p className="mt-1">
+            <strong>Faculty Remark:</strong> {facultyRemark}
+          </p>
+        )}
+        {adminRemark && (
+          <p className="mt-1">
+            <strong>Admin Remark:</strong> {adminRemark}
+          </p>
+        )}
+      </section>
 
       {/* Today Schedule */}
       <section className="bg-white shadow p-4 rounded">

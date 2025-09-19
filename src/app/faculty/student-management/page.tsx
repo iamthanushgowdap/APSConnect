@@ -1,206 +1,241 @@
-// src/app/faculty/student-management/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import clsx from "clsx";
 
-/**
- * Faculty Student Management
- * - List students in assigned branches/semesters
- * - Search, filter, pagination
- * - Approve / Reject (with remark) for pending students in faculty's assigned classes
- * - View student profile preview
- * - Bulk actions (approve selected)
- */
-
-type Student = {
+type UserRow = {
   id: string;
-  name: string;
-  usn?: string;
+  name?: string;
+  email?: string;
+  role?: string;
+  status?: string;
   branch?: string;
   semester?: string;
-  status?: string; // pending, approved, rejected
-  remark?: string | null;
-  email?: string;
+  auth_id?: string;
+  remarks?: string | null;
 };
 
-export default function FacultyStudentManagement() {
-  const [faculty, setFaculty] = useState<any | null>(null);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(30);
-  const [total, setTotal] = useState(0);
+export default function FacultyStudentManagementPage() {
   const [loading, setLoading] = useState(true);
+  const [students, setStudents] = useState<UserRow[]>([]);
+  const [pending, setPending] = useState<UserRow[]>([]);
+  const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [selected, setSelected] = useState<UserRow | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      try {
-        const { data: auth } = await supabase.auth.getUser();
-        if (!auth?.user) {
-          setMessage("Login required.");
-          return;
-        }
-        const { data: f } = await supabase.from("users").select("id,name,assigned_branches,assigned_semesters").eq("auth_id", auth.user.id).single();
-        setFaculty(f || null);
-        await loadStudents(f);
-      } catch (err) {
-        console.error("init error", err);
-        setMessage("Failed.");
-      } finally {
-        setLoading(false);
-      }
-    }
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchAll();
   }, []);
 
-  async function loadStudents(fac?: any) {
-    setLoading(true);
-    setMessage(null);
+  async function fetchAll() {
     try {
-      // Build query: faculty can view students in their assigned branches only
-      let q = supabase.from("users").select("id,name,usn,branch,semester,status,remark,email", { count: "exact" }).eq("role", "student");
-      if (fac?.assigned_branches && fac.assigned_branches.length) {
-        q = q.in("branch", fac.assigned_branches);
-      }
-      if (search) {
-        q = q.ilike("name", `%${search}%`);
-      }
-      if (filterStatus !== "all") {
-        q = q.eq("status", filterStatus);
-      }
-      q = q.order("created_at", { ascending: false }).range((page - 1) * pageSize, page * pageSize - 1);
-      const { data, count, error } = await q;
-      if (error) throw error;
-      setStudents(data || []);
-      setTotal(count || 0);
-      // reset selections
-      setSelected({});
+      setLoading(true);
+      // Fetch approved/other students for management
+      const { data: studentsData, error: studErr } = await supabase
+        .from("users")
+        .select("id,name,email,role,status,branch,semester,remarks")
+        .in("role", ["student"])
+        .neq("status", "pending") // show approved/rejected in main list; pending in top section
+        .order("name", { ascending: true });
+
+      if (studErr) throw studErr;
+      setStudents(studentsData ?? []);
+
+      // Fetch pending users separately
+      const { data: pendingData, error: pendErr } = await supabase
+        .from("users")
+        .select("id,name,email,role,status,branch,semester,remarks")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true });
+
+      if (pendErr) throw pendErr;
+      setPending(pendingData ?? []);
     } catch (err: any) {
-      console.error("loadStudents err", err);
-      setMessage("Failed to load students.");
+      console.error("fetchAll error", err);
+      setMessage("Error loading students: " + (err.message || err));
     } finally {
       setLoading(false);
     }
   }
 
-  function toggleSelect(id: string) {
-    setSelected((p) => ({ ...p, [id]: !p[id] }));
+  function filteredStudents() {
+    if (!search) return students;
+    const s = search.toLowerCase();
+    return students.filter(
+      (u) =>
+        (u.name ?? "").toLowerCase().includes(s) ||
+        (u.email ?? "").toLowerCase().includes(s) ||
+        (u.branch ?? "").toLowerCase().includes(s)
+    );
   }
 
-  async function approveStudent(id: string) {
-    const remark = prompt("Optional remark for approval (leave blank if none):", "");
+  // Approve or Reject helpers calling the API routes
+  async function handleAction(userId: string, type: "approve" | "reject") {
     try {
-      const { error } = await supabase.from("users").update({ status: "approved", remark: remark || null }).eq("id", id);
-      if (error) throw error;
-      setMessage("Student approved.");
-      await loadStudents(faculty);
+      setActionLoading(true);
+      const remarks = prompt(`Enter remarks for ${type === "approve" ? "approval" : "rejection"} (optional):`) || "";
+      const res = await fetch(`/api/approvals/${userId}/${type}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remarks }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || "Server error");
+      }
+
+      // Refresh lists
+      await fetchAll();
+      setMessage(`${type === "approve" ? "Approved" : "Rejected"} successfully`);
     } catch (err: any) {
-      console.error(err);
-      setMessage("Approve failed.");
+      console.error("action error", err);
+      setMessage("Action failed: " + (err.message || err));
+    } finally {
+      setActionLoading(false);
+      setTimeout(() => setMessage(null), 3500);
     }
   }
 
-  async function rejectStudent(id: string) {
-    const remark = prompt("Enter remark for rejection (required):", "");
-    if (!remark) {
-      alert("Rejection remark required.");
-      return;
-    }
-    try {
-      const { error } = await supabase.from("users").update({ status: "rejected", remark }).eq("id", id);
-      if (error) throw error;
-      setMessage("Student rejected.");
-      await loadStudents(faculty);
-    } catch (err: any) {
-      console.error(err);
-      setMessage("Reject failed.");
-    }
-  }
-
-  async function bulkApprove() {
-    const ids = Object.keys(selected).filter((k) => selected[k]);
-    if (ids.length === 0) return alert("No students selected.");
-    if (!confirm(`Approve ${ids.length} students?`)) return;
-    try {
-      const { error } = await supabase.from("users").update({ status: "approved", remark: null }).in("id", ids);
-      if (error) throw error;
-      setMessage(`Approved ${ids.length} students.`);
-      await loadStudents(faculty);
-    } catch (err: any) {
-      console.error(err);
-      setMessage("Bulk approve failed.");
-    }
-  }
-
+  if (loading) return <p className="p-4">Loading...</p>;
   return (
-    <main className="p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-bold mb-4">Student Management</h1>
-      {message && <div className="mb-3 text-sm text-red-600">{message}</div>}
+    <main className="p-6 space-y-6">
+      <h1 className="text-2xl font-bold">Student Management</h1>
 
-      <div className="bg-white p-3 rounded shadow mb-4">
-        <div className="flex gap-2 mb-3">
-          <input placeholder="Search student name" value={search} onChange={(e) => setSearch(e.target.value)} className="border p-2 rounded flex-1" />
-          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="border p-2 rounded">
-            <option value="all">All</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-          </select>
-          <button onClick={() => loadStudents(faculty)} className="bg-blue-600 text-white px-3 py-1 rounded">Search</button>
-          <button onClick={bulkApprove} className="bg-green-600 text-white px-3 py-1 rounded">Bulk Approve</button>
+      {message && (
+        <div className="bg-green-100 text-green-800 p-3 rounded">
+          {message}
+        </div>
+      )}
+
+      {/* Pending Approvals */}
+      <section className="bg-white shadow rounded p-4">
+        <h2 className="text-lg font-semibold mb-3">Pending Approvals</h2>
+        {pending.length === 0 ? (
+          <p className="text-sm text-gray-600">No pending approvals.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full table-auto border-collapse">
+              <thead>
+                <tr className="text-left">
+                  <th className="px-2 py-1">Name</th>
+                  <th className="px-2 py-1">Email</th>
+                  <th className="px-2 py-1">Branch</th>
+                  <th className="px-2 py-1">Semester</th>
+                  <th className="px-2 py-1">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pending.map((u) => (
+                  <tr key={u.id} className="border-t">
+                    <td className="px-2 py-2">{u.name ?? "—"}</td>
+                    <td className="px-2 py-2">{u.email}</td>
+                    <td className="px-2 py-2">{u.branch ?? "—"}</td>
+                    <td className="px-2 py-2">{u.semester ?? "—"}</td>
+                    <td className="px-2 py-2">
+                      <button
+                        disabled={actionLoading}
+                        onClick={() => handleAction(u.id, "approve")}
+                        className="mr-2 px-3 py-1 rounded bg-green-600 text-white"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        disabled={actionLoading}
+                        onClick={() => handleAction(u.id, "reject")}
+                        className="px-3 py-1 rounded bg-red-600 text-white"
+                      >
+                        Reject
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Search & Student List */}
+      <section className="bg-white shadow rounded p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Students</h2>
+          <div className="flex items-center space-x-2">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name / email / branch"
+              className="border px-3 py-1 rounded"
+            />
+            <button onClick={() => fetchAll()} className="px-3 py-1 rounded bg-gray-200">
+              Refresh
+            </button>
+          </div>
         </div>
 
-        {loading ? <p>Loading students…</p> : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full border">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="p-2 border"><input type="checkbox" onChange={(e) => { const on = e.target.checked; const map: Record<string, boolean> = {}; students.forEach(s => map[s.id] = on); setSelected(map); }} /></th>
-                    <th className="p-2 border">Name</th>
-                    <th className="p-2 border">USN</th>
-                    <th className="p-2 border">Branch</th>
-                    <th className="p-2 border">Sem</th>
-                    <th className="p-2 border">Status</th>
-                    <th className="p-2 border">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {students.map((s) => (
-                    <tr key={s.id} className="hover:bg-gray-50">
-                      <td className="p-2 border text-center"><input type="checkbox" checked={!!selected[s.id]} onChange={() => toggleSelect(s.id)} /></td>
-                      <td className="p-2 border">{s.name}<div className="text-xs text-gray-500">{s.email}</div></td>
-                      <td className="p-2 border">{s.usn}</td>
-                      <td className="p-2 border">{s.branch}</td>
-                      <td className="p-2 border">{s.semester}</td>
-                      <td className="p-2 border">{s.status}{s.status === "rejected" && s.remark ? <div className="text-xs text-red-600">Remark: {s.remark}</div> : null}</td>
-                      <td className="p-2 border">
-                        {s.status === "pending" && <button onClick={() => approveStudent(s.id)} className="text-sm bg-green-600 text-white px-2 py-1 rounded mr-2">Approve</button>}
-                        {s.status === "pending" && <button onClick={() => rejectStudent(s.id)} className="text-sm bg-red-600 text-white px-2 py-1 rounded">Reject</button>}
-                        <button onClick={() => { alert(JSON.stringify(s, null, 2)); }} className="text-sm bg-gray-300 px-2 py-1 rounded ml-2">View</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <div className="overflow-x-auto">
+          <table className="w-full table-auto border-collapse">
+            <thead>
+              <tr className="text-left">
+                <th className="px-2 py-1">Name</th>
+                <th className="px-2 py-1">Email</th>
+                <th className="px-2 py-1">Branch</th>
+                <th className="px-2 py-1">Semester</th>
+                <th className="px-2 py-1">Status</th>
+                <th className="px-2 py-1">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredStudents().map((u) => (
+                <tr key={u.id} className="border-t">
+                  <td className="px-2 py-2">{u.name ?? "—"}</td>
+                  <td className="px-2 py-2">{u.email}</td>
+                  <td className="px-2 py-2">{u.branch ?? "—"}</td>
+                  <td className="px-2 py-2">{u.semester ?? "—"}</td>
+                  <td className="px-2 py-2">
+                    <span
+                      className={clsx("px-2 py-0.5 rounded text-sm", {
+                        "bg-green-100 text-green-800": u.status === "approved",
+                        "bg-yellow-100 text-yellow-800": u.status === "pending",
+                        "bg-red-100 text-red-800": u.status === "rejected",
+                      })}
+                    >
+                      {u.status}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2">
+                    {/* Quick approve/reject from main list too */}
+                    {u.status !== "approved" && (
+                      <button
+                        onClick={() => handleAction(u.id, "approve")}
+                        disabled={actionLoading}
+                        className="mr-2 px-2 py-1 rounded bg-green-600 text-white text-sm"
+                      >
+                        Approve
+                      </button>
+                    )}
+                    {u.status !== "rejected" && (
+                      <button
+                        onClick={() => handleAction(u.id, "reject")}
+                        disabled={actionLoading}
+                        className="px-2 py-1 rounded bg-red-600 text-white text-sm"
+                      >
+                        Reject
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
 
-            <div className="mt-3 flex items-center justify-between">
-              <div className="text-sm text-gray-600">Showing {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, total)} of {total}</div>
-              <div className="flex gap-2">
-                <button onClick={() => { if (page > 1) { setPage(p => p - 1); loadStudents(faculty); } }} className="px-3 py-1 border rounded">Prev</button>
-                <button onClick={() => { setPage(p => p + 1); loadStudents(faculty); }} className="px-3 py-1 border rounded">Next</button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+          {students.length === 0 && (
+            <p className="text-sm text-gray-500 mt-3">No students found.</p>
+          )}
+        </div>
+      </section>
     </main>
   );
 }

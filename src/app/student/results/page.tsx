@@ -1,118 +1,91 @@
+// src/app/student/results/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
-type Result = {
-  id: string;
-  subject: string;
-  module_marks: number;
-  lab_marks: number;
-  internal_marks: number;
-  branch?: string | null;
-  semester?: string | null;
-};
+type TimetableRow = { id: string; exam_id: string; branch: string; semester: number; subject: string; exam_date: string; start_time?: string; end_time?: string };
+type ResultRow = { subject: string; marks: number; max_marks: number; grade?: string };
 
-export default function StudentResults() {
-  const [student, setStudent] = useState<any>(null);
-  const [results, setResults] = useState<Result[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function StudentResultsPage() {
+  const [timetable, setTimetable] = useState<TimetableRow[]>([]);
+  const [examId, setExamId] = useState("");
+  const [results, setResults] = useState<ResultRow[]>([]);
+  const [summary, setSummary] = useState<{ total:number, totalMax:number, pct:number|null } | null>(null);
   const [message, setMessage] = useState("");
 
-  useEffect(() => {
-    async function load() {
-      try {
-        setLoading(true);
-        const { data: auth } = await supabase.auth.getUser();
-        if (!auth?.user) {
-          setMessage("Please login.");
-          return;
-        }
-        const { data: studentRow } = await supabase
-          .from("users")
-          .select("id,branch,semester")
-          .eq("auth_id", auth.user.id)
-          .single();
-        if (!studentRow) {
-          setMessage("Student not found.");
-          return;
-        }
-        setStudent(studentRow);
+  useEffect(() => { loadTimetableForMe(); }, []);
 
-        const { data: res, error } = await supabase
-          .from("results")
-          .select("*")
-          .eq("student_id", studentRow.id)
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        setResults(res || []);
-      } catch (err: any) {
-        setMessage("Error loading results: " + err.message);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
+  async function getMyUser() {
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth?.user) return null;
+    const { data: u } = await supabase.from("users").select("id,branch,semester").eq("auth_id", auth.user.id).maybeSingle();
+    return u;
+  }
 
-  const totalMarks = results.reduce(
-    (sum, r) => sum + r.module_marks + r.lab_marks + r.internal_marks,
-    0
-  );
-  const maxMarks = results.length * 100; // assume each subject max 100
-  const percentage = maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : 0;
+  async function loadTimetableForMe() {
+    const u = await getMyUser();
+    if (!u) return;
+    const { data } = await supabase.from("exam_timetable").select("*").eq("branch", u.branch).eq("semester", u.semester).order("exam_date", { ascending: true });
+    setTimetable(data ?? []);
+  }
 
-  if (loading) return <div className="p-6">Loading results…</div>;
-  if (message) return <div className="p-6">{message}</div>;
+  async function loadResultsForExam(exam_id: string) {
+    setExamId(exam_id);
+    const res = await fetch(`/api/results/student-summary?exam_id=${exam_id}`);
+    const j = await res.json();
+    if (!res.ok) { setMessage(j.error || "Error"); return; }
+    setResults(j.rows ?? []);
+    setSummary({ total: j.total, totalMax: j.totalMax, pct: j.pct });
+  }
 
   return (
-    <main className="p-6 bg-gray-50 min-h-screen space-y-6">
-      <h1 className="text-2xl font-bold">My Results</h1>
+    <main className="p-6 min-h-screen bg-gray-100 space-y-6">
+      <h1 className="text-2xl font-bold">My Exam Timetable & Results</h1>
+      {message && <div className="bg-red-100 p-2 rounded">{message}</div>}
 
-      {results.length === 0 ? (
-        <p>No results uploaded yet.</p>
-      ) : (
-        <>
-          <table className="w-full border">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="border p-2">Subject</th>
-                <th className="border p-2">Module</th>
-                <th className="border p-2">Lab</th>
-                <th className="border p-2">Internal</th>
-                <th className="border p-2">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((r) => (
-                <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="border p-2">{r.subject}</td>
-                  <td className="border p-2">{r.module_marks}</td>
-                  <td className="border p-2">{r.lab_marks}</td>
-                  <td className="border p-2">{r.internal_marks}</td>
-                  <td className="border p-2 font-bold">
-                    {r.module_marks + r.lab_marks + r.internal_marks}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <section className="bg-white p-3 rounded shadow">
+        <h2 className="font-semibold">Upcoming / Relevant Timetable</h2>
+        {timetable.length === 0 ? <p>No timetable entries.</p> : (
+          <ul className="divide-y">
+            {timetable.map(t => (
+              <li key={t.id} className="p-2 flex justify-between items-center">
+                <div>
+                  <div className="font-medium">{t.subject}</div>
+                  <div className="text-xs text-gray-500">{t.exam_date} {t.start_time ? `• ${t.start_time}` : ""}</div>
+                </div>
+                <div>
+                  <button onClick={() => loadResultsForExam(t.exam_id)} className="bg-blue-600 text-white px-2 py-1 rounded">View Results</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
-          {/* Summary */}
-          <section className="bg-white shadow p-4 rounded">
-            <h2 className="text-lg font-semibold">Summary</h2>
-            <p>Total Marks: {totalMarks}</p>
-            <p>Percentage: {percentage}%</p>
-            <p>
-              Status:{" "}
-              {percentage >= 40 ? (
-                <span className="text-green-600 font-bold">PASS</span>
-              ) : (
-                <span className="text-red-600 font-bold">FAIL</span>
-              )}
-            </p>
-          </section>
-        </>
+      {results.length > 0 && (
+        <section className="bg-white p-3 rounded shadow">
+          <h2 className="font-semibold">Results for Exam {examId}</h2>
+          <ul className="divide-y">
+            {results.map((r,i)=>(
+              <li key={i} className="p-2 flex justify-between items-center">
+                <div>
+                  <div className="font-medium">{r.subject}</div>
+                  <div className="text-xs text-gray-500">Grade: {r.grade ?? "-"}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold">{r.marks}/{r.max_marks}</div>
+                  <div className="text-xs text-gray-500">{Math.round((r.marks / r.max_marks)*10000)/100}%</div>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-3 bg-green-50 p-3 rounded">
+            <div>Total: {summary?.total}/{summary?.totalMax}</div>
+            <div>Percentage: {summary?.pct ?? "-"}%</div>
+          </div>
+        </section>
       )}
     </main>
   );

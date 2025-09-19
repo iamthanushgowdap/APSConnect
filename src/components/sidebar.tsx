@@ -14,7 +14,11 @@ export default function Sidebar() {
       const { data: authData } = await supabase.auth.getUser();
       const userId = authData?.user?.id;
       if (!userId) return;
-      const { data } = await supabase.from("users").select("role, name").eq("auth_id", userId).single();
+      const { data } = await supabase
+        .from("users")
+        .select("role, name")
+        .eq("auth_id", userId)
+        .single();
       setRole(data?.role || null);
       setName(data?.name || null);
     }
@@ -29,48 +33,53 @@ export default function Sidebar() {
       </div>
 
       <nav className="space-y-2">
-        <Link href="/"><a className="block p-2 rounded hover:bg-gray-100">Home</a></Link>
+        <Link href="/" className="block p-2 rounded hover:bg-gray-100">
+          Home
+        </Link>
+
         {role === "admin" && (
           <>
-            <Link href="/admin/dashboard"><a className="block p-2 rounded hover:bg-gray-100">Dashboard</a></Link>
-            <Link href="/admin/announcements"><a className="block p-2 rounded hover:bg-gray-100">Announcements</a></Link>
-            <Link href="/admin/clubs"><a className="block p-2 rounded hover:bg-gray-100">Clubs</a></Link>
-            <Link href="/admin/exams"><a className="block p-2 rounded hover:bg-gray-100">Exams</a></Link>
-            <Link href="/admin/library"><a className="block p-2 rounded hover:bg-gray-100">Library</a></Link>
-            <Link href="/admin/resumes"><a className="block p-2 rounded hover:bg-gray-100">Resumes</a></Link>
-            <Link href="/admin/fundraisers"><a className="block p-2 rounded hover:bg-gray-100">Fundraisers</a></Link>
-            <Link href="/admin/fees"><a className="block p-2 rounded hover:bg-gray-100">Fees</a></Link>
-          </>
-        )}
-        {role === "faculty" && (
-          <>
-            <Link href="/faculty/dashboard"><a className="block p-2 rounded hover:bg-gray-100">Dashboard</a></Link>
-            <Link href="/faculty/assignments"><a className="block p-2 rounded hover:bg-gray-100">Assignments</a></Link>
-            <Link href="/faculty/clubs"><a className="block p-2 rounded hover:bg-gray-100">Clubs</a></Link>
-            <Link href="/faculty/courses"><a className="block p-2 rounded hover:bg-gray-100">Courses</a></Link>
-            <Link href="/faculty/results"><a className="block p-2 rounded hover:bg-gray-100">Results</a></Link>
-            <Link href="/faculty/resumes"><a className="block p-2 rounded hover:bg-gray-100">Resumes</a></Link>
-            <Link href="/faculty/zoom"><a className="block p-2 rounded hover:bg-gray-100">Zoom</a></Link>
-          </>
-        )}
-        {role === "student" && (
-          <>
-            <Link href="/student/dashboard"><a className="block p-2 rounded hover:bg-gray-100">Dashboard</a></Link>
-            <Link href="/student/assignments"><a className="block p-2 rounded hover:bg-gray-100">Assignments</a></Link>
-            <Link href="/student/clubs"><a className="block p-2 rounded hover:bg-gray-100">Clubs</a></Link>
-            <Link href="/student/contributions"><a className="block p-2 rounded hover:bg-gray-100">Contributions</a></Link>
-            <Link href="/student/exams"><a className="block p-2 rounded hover:bg-gray-100">Exams</a></Link>
-            <Link href="/student/library"><a className="block p-2 rounded hover:bg-gray-100">Library</a></Link>
-            <Link href="/student/notifications"><a className="block p-2 rounded hover:bg-gray-100">Notifications</a></Link>
-            <Link href="/student/results"><a className="block p-2 rounded hover:bg-gray-100">Results</a></Link>
-            <Link href="/student/resume"><a className="block p-2 rounded hover:bg-gray-100">Resume</a></Link>
-            <Link href="/student/scan"><a className="block p-2 rounded hover:bg-gray-100">Scan (QR)</a></Link>
-            <Link href="/student/zoom"><a className="block p-2 rounded hover:bg-gray-100">Zoom</a></Link>
+            <Link href="/admin/dashboard" className="block p-2 rounded hover:bg-gray-100">Dashboard</Link>
+            <Link href="/admin/announcements" className="block p-2 rounded hover:bg-gray-100">Announcements</Link>
+            <Link href="/admin/clubs" className="block p-2 rounded hover:bg-gray-100">Clubs</Link>
+            <Link href="/admin/exams" className="block p-2 rounded hover:bg-gray-100">Exams</Link>
+            <Link href="/admin/library" className="block p-2 rounded hover:bg-gray-100">Library</Link>
+            <Link href="/admin/resumes" className="block p-2 rounded hover:bg-gray-100">Resumes</Link>
+            <Link href="/admin/fundraisers" className="block p-2 rounded hover:bg-gray-100">Fundraisers</Link>
+            <Link href="/admin/fees" className="block p-2 rounded hover:bg-gray-100">Fees</Link>
           </>
         )}
 
-        <Link href="/alumni"><a className="block p-2 rounded hover:bg-gray-100">Alumni</a></Link>
-        <Link href="/logout"><a className="block p-2 rounded hover:bg-gray-100">Logout</a></Link>
+        {role === "faculty" && (
+          <>
+            <Link href="/faculty/dashboard" className="block p-2 rounded hover:bg-gray-100">Dashboard</Link>
+            <Link href="/faculty/assignments" className="block p-2 rounded hover:bg-gray-100">Assignments</Link>
+            <Link href="/faculty/clubs" className="block p-2 rounded hover:bg-gray-100">Clubs</Link>
+            <Link href="/faculty/courses" className="block p-2 rounded hover:bg-gray-100">Courses</Link>
+            <Link href="/faculty/results" className="block p-2 rounded hover:bg-gray-100">Results</Link>
+            <Link href="/faculty/resumes" className="block p-2 rounded hover:bg-gray-100">Resumes</Link>
+            <Link href="/faculty/zoom" className="block p-2 rounded hover:bg-gray-100">Zoom</Link>
+          </>
+        )}
+
+        {role === "student" && (
+          <>
+            <Link href="/student/dashboard" className="block p-2 rounded hover:bg-gray-100">Dashboard</Link>
+            <Link href="/student/assignments" className="block p-2 rounded hover:bg-gray-100">Assignments</Link>
+            <Link href="/student/clubs" className="block p-2 rounded hover:bg-gray-100">Clubs</Link>
+            <Link href="/student/contributions" className="block p-2 rounded hover:bg-gray-100">Contributions</Link>
+            <Link href="/student/exams" className="block p-2 rounded hover:bg-gray-100">Exams</Link>
+            <Link href="/student/library" className="block p-2 rounded hover:bg-gray-100">Library</Link>
+            <Link href="/student/notifications" className="block p-2 rounded hover:bg-gray-100">Notifications</Link>
+            <Link href="/student/results" className="block p-2 rounded hover:bg-gray-100">Results</Link>
+            <Link href="/student/resume" className="block p-2 rounded hover:bg-gray-100">Resume</Link>
+            <Link href="/student/scan" className="block p-2 rounded hover:bg-gray-100">Scan (QR)</Link>
+            <Link href="/student/zoom" className="block p-2 rounded hover:bg-gray-100">Zoom</Link>
+          </>
+        )}
+
+        <Link href="/alumni" className="block p-2 rounded hover:bg-gray-100">Alumni</Link>
+        <Link href="/logout" className="block p-2 rounded hover:bg-gray-100">Logout</Link>
       </nav>
     </aside>
   );

@@ -1,5 +1,5 @@
-// src/components/Topbar.tsx
 "use client";
+{/* src/components/Topbar.tsx */}
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -42,20 +42,23 @@ export default function Topbar() {
     <header className="w-full bg-white dark:bg-slate-800 border-b p-3 flex items-center justify-between">
       <div className="flex items-center gap-4">
         <button className="md:hidden p-2">☰</button>
-        <Link href="/"><a className="font-bold text-lg">APSConnect</a></Link>
-      </div>
+        <Link href="/" className="font-bold text-lg">
+          APSConnect
+        </Link>      
+        </div>
 
       <div className="flex items-center gap-4">
-        <Link href="/student/notifications">
-          <a className="relative">
-            🔔
-            {unread > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs rounded-full px-1">
-                {unread}
-              </span>
-            )}
-          </a>
-        </Link>
+        // src/components/topbar.tsx
+
+<Link href="/student/notifications" className="relative">
+  🔔
+  {unread > 0 && (
+    <span className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full text-xs px-1">
+      {unread}
+    </span>
+  )}
+</Link>
+
         <div className="w-8 h-8 bg-gray-200 rounded-full" />
       </div>
     </header>

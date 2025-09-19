@@ -1,4 +1,3 @@
-// src/app/student/library/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -6,91 +5,121 @@ import { supabase } from "@/lib/supabaseClient";
 
 type Book = {
   id: string;
-  title: string;
+  book_title: string;
   author?: string;
-  issued_to?: string | null;
-  due_date?: string | null;
-  created_at?: string;
+  isbn?: string;
+  available_copies: number;
+  total_copies: number;
 };
 
-export default function StudentLibrary() {
-  const [books, setBooks] = useState<Book[]>([]);
-  const [myIssued, setMyIssued] = useState<Book[]>([]);
-  const [loading, setLoading] = useState(true);
+type Loan = {
+  id: string;
+  library_id: string;
+  book_title: string;
+  due_date: string;
+  issued_at: string;
+  status: string;
+  fine_amount?: number;
+};
+
+export default function StudentLibraryPage() {
+  const [catalog, setCatalog] = useState<Book[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
+  const [selectedDue, setSelectedDue] = useState<string>("");
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const { data: auth } = await supabase.auth.getUser();
-      if (!auth?.user) {
-        setLoading(false);
-        return;
-      }
-      const { data: student } = await supabase
-        .from("users")
-        .select("id")
-        .eq("auth_id", auth.user.id)
-        .single();
-      if (!student?.id) {
-        setLoading(false);
-        return;
-      }
-
-      const { data: allBooks } = await supabase.from("library").select("*").order("created_at", { ascending: false });
-      setBooks(allBooks || []);
-
-      const { data: issued } = await supabase.from("library").select("*").eq("issued_to", student.id).order("due_date", { ascending: true });
-      setMyIssued(issued || []);
-      setLoading(false);
-    }
     load();
   }, []);
 
-  if (loading) return <div className="p-6">Loading library…</div>;
+  async function load() {
+    const { data: books } = await supabase.from("library").select("*").order("book_title");
+    setCatalog(books ?? []);
+    // user loans
+   const { data, error } = await supabase.auth.getUser();
+const user = data?.user;
+if (!user) return;
+
+const { data: uRow } = await supabase
+  .from("users")
+  .select("id")
+  .eq("auth_id", user.id)   // ✅ use user.id
+  .maybeSingle();
+if (!uRow) return;
+
+    const { data: myLoans } = await supabase.from("library_transactions").select("*, library(book_title)").eq("student_id", uRow.id).order("issued_at", { ascending: false });
+    setLoans((myLoans ?? []).map((l: any) => ({ id: l.id, library_id: l.library_id, book_title: l.library.book_title, due_date: l.due_date, issued_at: l.issued_at, status: l.status, fine_amount: l.fine_amount })));
+  }
+
+  async function requestIssue(bookId: string) {
+    // default due 14 days from now if not chosen
+    const due = selectedDue || new Date(Date.now() + 14*24*60*60*1000).toISOString().slice(0,10);
+    const res = await fetch("/api/library/issue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ library_id: bookId, due_date: due }),
+    });
+    const json = await res.json();
+    if (!res.ok) setMessage("Issue failed: " + (json.error || res.status));
+    else {
+      setMessage("Book issued successfully");
+      load();
+    }
+    setTimeout(() => setMessage(""), 3500);
+  }
 
   return (
-    <main className="p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-bold mb-4">Library</h1>
+    <main className="p-6 space-y-6">
+      <h1 className="text-2xl font-bold">Library</h1>
+      {message && <div className="bg-green-100 p-2 rounded">{message}</div>}
 
-      <section className="mb-6">
-        <h2 className="text-lg font-semibold mb-2">Books issued to you</h2>
-        {myIssued.length === 0 ? (
-          <p>No books currently issued.</p>
-        ) : (
-          <ul className="space-y-2">
-            {myIssued.map((b) => (
-              <li key={b.id} className="bg-white p-3 rounded shadow flex justify-between">
-                <div>
-                  <strong>{b.title}</strong>
-                  <div className="text-sm text-gray-600">{b.author}</div>
-                  <div className="text-xs text-gray-500">Due: {b.due_date ? new Date(b.due_date).toLocaleDateString() : "N/A"}</div>
-                </div>
-                <div className="text-right">
-                  <span className={`px-2 py-1 rounded text-xs ${b.due_date && new Date(b.due_date) < new Date() ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
-                    {b.due_date && new Date(b.due_date) < new Date() ? "Overdue" : "On time"}
-                  </span>
+      <section className="bg-white p-4 rounded shadow">
+        <h2 className="text-lg font-semibold">Search & Request</h2>
+        <div className="flex items-center space-x-2 mb-3">
+          <input type="date" value={selectedDue} onChange={(e) => setSelectedDue(e.target.value)} className="border p-2 rounded" />
+          <p className="text-sm text-gray-600">Select due date (optional). Default 14 days.</p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {catalog.map((b) => (
+            <div key={b.id} className="border p-3 rounded flex justify-between items-center">
+              <div>
+                <div className="font-semibold">{b.book_title}</div>
+                <div className="text-sm text-gray-600">{b.author} {b.isbn && `• ${b.isbn}`}</div>
+                <div className="text-sm">Available: {b.available_copies}/{b.total_copies}</div>
+              </div>
+              <div>
+                <button disabled={b.available_copies < 1} onClick={() => requestIssue(b.id)} className={`px-3 py-1 rounded ${b.available_copies < 1 ? 'bg-gray-300' : 'bg-blue-600 text-white'}`}>
+                  Request
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-white p-4 rounded shadow">
+        <h2 className="text-lg font-semibold">My Loans</h2>
+        {loans.length === 0 ? <p>No active loans.</p> : (
+          <ul>
+            {loans.map(l => (
+              <li key={l.id} className="border-b py-2">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="font-semibold">{l.book_title}</div>
+                    <div className="text-sm text-gray-600">Due: {l.due_date} • Status: {l.status}</div>
+  {(l.fine_amount ?? 0) > 0 && (
+  <div className="text-sm text-red-600">Fine: ₹{l.fine_amount}</div>
+)}
+                  </div>
+                  <div>
+                    {/* Student cannot directly mark returned; usually faculty/admin will return, but you can provide a request flow */}
+                    <button disabled className="px-3 py-1 bg-gray-300 rounded">Request Return</button>
+                  </div>
                 </div>
               </li>
             ))}
           </ul>
         )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold mb-2">All Library Books</h2>
-        <ul className="space-y-2">
-          {books.map((b) => (
-            <li key={b.id} className="bg-white p-3 rounded shadow flex justify-between">
-              <div>
-                <strong>{b.title}</strong>
-                <div className="text-sm text-gray-600">{b.author}</div>
-              </div>
-              <div className="text-right">
-                {b.issued_to ? <span className="text-sm text-gray-500">Issued</span> : <span className="text-sm text-green-600">Available</span>}
-              </div>
-            </li>
-          ))}
-        </ul>
       </section>
     </main>
   );

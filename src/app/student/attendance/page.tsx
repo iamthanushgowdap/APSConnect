@@ -2,118 +2,76 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
 
-export default function StudentAttendance() {
-  const [student, setStudent] = useState<any>(null);
-  const [attendance, setAttendance] = useState<any[]>([]);
+export default function StudentAttendancePage() {
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [myRecords, setMyRecords] = useState<any[]>([]);
+  const [qrToken, setQrToken] = useState("");
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        setLoading(true);
-        const { data: auth } = await supabase.auth.getUser();
-        if (!auth?.user) {
-          setMessage("Login required");
-          return;
-        }
+  useEffect(() => { load(); }, []);
 
-        const { data: studentData } = await supabase
-          .from("users")
-          .select("*")
-          .eq("auth_id", auth.user.id)
-          .single();
-        if (!studentData) {
-          setMessage("Student not found");
-          return;
-        }
-        setStudent(studentData);
+  async function load() {
+    const { data } = await supabase.from("attendance_sessions").select("*").order("session_date", { ascending: false });
+    setSessions(data ?? []);
+    // fetch my records
+    const { data: auth } = await supabase.auth.getUser();
+    const user = auth?.user;
+    if (!user) return;
+    const { data: uRow } = await supabase.from("users").select("id").eq("auth_id", user.id).maybeSingle();
+    if (!uRow) return;
+    const { data: recs } = await supabase.from("attendance_records").select("*, attendance_sessions(*)").eq("student_id", uRow.id).order("marked_at", { ascending: false });
+    setMyRecords(recs ?? []);
+  }
 
-        const { data: att } = await supabase
-          .from("attendance")
-          .select("*")
-          .eq("student_id", studentData.id);
-        setAttendance(att ?? []);
-      } catch (err: any) {
-        setMessage("Error: " + err.message);
-      } finally {
-        setLoading(false);
-      }
+  async function markPresent(sessionId: string, method: 'manual'|'qr') {
+    const payload: any = { session_id: sessionId, method };
+    if (method === 'qr') {
+      const token = prompt("Enter QR token (scan or paste):") || '';
+      payload.qr_token = token;
     }
-    load();
-  }, []);
-
-  const grouped = (() => {
-    const g: Record<string, { present: number; total: number }> = {};
-    attendance.forEach((a) => {
-      if (!g[a.subject]) g[a.subject] = { present: 0, total: 0 };
-      g[a.subject].total++;
-      if (a.present) g[a.subject].present++;
+    const res = await fetch("/api/attendance/mark", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
     });
-    return g;
-  })();
-
-  const chartData = Object.keys(grouped).map((subj) => {
-    const p = grouped[subj].present;
-    const t = grouped[subj].total;
-    return { subject: subj, percentage: Math.round((p / t) * 100) };
-  });
-
-  const overall = (() => {
-    let p = 0,
-      t = 0;
-    Object.values(grouped).forEach((v) => {
-      p += v.present;
-      t += v.total;
-    });
-    return t > 0 ? Math.round((p / t) * 100) : 0;
-  })();
-
-  if (loading) return <p>Loading...</p>;
-  if (message) return <p>{message}</p>;
+    const j = await res.json();
+    if (!res.ok) setMessage("Mark failed: " + (j.error || res.status));
+    else { setMessage("Marked"); load(); }
+    setTimeout(() => setMessage(""), 3000);
+  }
 
   return (
-    <main className="p-6 bg-gray-100 min-h-screen space-y-6">
+    <main className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">My Attendance</h1>
+      {message && <div className="bg-green-100 p-2 rounded">{message}</div>}
 
-      <section className="bg-white shadow p-4 rounded">
-        <h2 className="text-xl font-semibold mb-2">Overall</h2>
-        <p
-          className={
-            overall < 75 ? "text-red-600 font-bold" : "text-green-600 font-bold"
-          }
-        >
-          {overall}% {overall < 75 && "(Shortage!)"}
-        </p>
+      <section className="bg-white p-4 rounded shadow">
+        <h2 className="font-semibold">Upcoming / Recent Sessions</h2>
+        <ul>
+          {sessions.map(s => (
+            <li key={s.id} className="border-b py-2 flex justify-between">
+              <div>
+                <div className="font-semibold">{s.subject}</div>
+                <div className="text-sm">{s.branch} Sem {s.semester} • {s.session_date}</div>
+              </div>
+              <div className="space-x-2">
+                <button onClick={() => markPresent(s.id, 'manual')} className="px-2 py-1 bg-blue-600 text-white rounded">Mark</button>
+                {s.qr_token && <button onClick={() => markPresent(s.id, 'qr')} className="px-2 py-1 bg-indigo-600 text-white rounded">Scan QR</button>}
+              </div>
+            </li>
+          ))}
+        </ul>
       </section>
 
-      <section className="bg-white shadow p-4 rounded">
-        <h2 className="text-xl font-semibold mb-2">By Subject</h2>
-        {chartData.length === 0 ? (
-          <p>No attendance data</p>
-        ) : (
-          <div style={{ width: "100%", height: 300 }}>
-            <ResponsiveContainer>
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="subject" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="percentage" fill="#3182ce" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+      <section className="bg-white p-4 rounded shadow">
+        <h2 className="font-semibold">My Records</h2>
+        <ul>
+          {myRecords.map(r => (
+            <li key={r.id} className="border-b py-2">
+              <div className="font-semibold">{r.attendance_sessions?.subject}</div>
+              <div className="text-sm">Date: {r.attendance_sessions?.session_date} — Status: {r.status}</div>
+            </li>
+          ))}
+        </ul>
       </section>
     </main>
   );
